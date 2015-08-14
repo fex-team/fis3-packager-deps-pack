@@ -4,7 +4,7 @@
 
 支持包含依赖的打包插件
 
-```
+```js
 fis.match('::packager', {
   packager: fis.plugin('deps-pack', {
     
