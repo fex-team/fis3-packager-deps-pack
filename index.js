@@ -85,9 +85,9 @@ module.exports = function(ret, pack, settings, opt) {
       var base = result;
       result = [];
 
-      if (pseudo === 'deps' || pseudo === 'async') {
+      if (pseudo === 'deps' || pseudo === 'asyncs') {
         base.forEach(function(file) {
-          result.push.apply(result, getDeps(file, pseudo === 'async'));
+          result.push.apply(result, getDeps(file, pseudo === 'asyncs'));
         });
       } else {
         fis.log.error('The pseudo class `%s` is not supported.', pseudo);
