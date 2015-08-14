@@ -17,27 +17,84 @@ module.exports = function(ret, pack, settings, opt) {
     sources.push(src[key]);
   });
 
-  var getDeps = (function(src, sources) {
+  var getDeps = (function(src, ids) {
     var cache = {};
+    var stack = [];
 
-    return function(file, async) {
+    return function(file, async, includeAsync) {
+      var fn = arguments.callee;
 
+      if (cache[file.subpath] && cache[file.subpath][async ? 'asyncs' : 'deps']) {
+        return cache[file.subpath][async ? 'asyncs' : 'deps'];
+      }
+      var list = [];
+
+      if (~stack.indexOf(file.subpath)) {
+        return list;
+      }
+
+      stack.push(file.subpath);
+
+      if ((async || includeAsync) && file.asyncs && file.asyncs.length) {
+        file.asyncs.forEach(function(id) {
+          if (ids[id]) {
+            list.push(ids[id]);
+            list.push.apply(list, fn(ids[id], false, true));
+          }
+        });
+      }
+
+      if (file.requires && file.requires.length) {
+        file.requires.forEach(function(id) {
+          if (ids[id]) {
+            async || list.push(ids[id]);
+            list.push.apply(list, fn(ids[id], async));
+          }
+        });
+      }
+
+      stack.pop();
+      cache[file.subpath] = cache[file.subpath] || {};
+      cache[file.subpath][async ? 'asyncs' : 'deps'] = list;
+      return list;
     };
-  })(src, sources);
+  })(src, ret.ids);
 
   function find(reg, rExt) {
+    var pseudo, result;
+
     if (src[reg]) {
       return [src[reg]];
     } else if (reg === '**') {
       // do nothing
     } else if (typeof reg === 'string') {
+      if (/^(.*):(.+)$/.test(reg)) {
+        pseudo = RegExp.$2;
+        reg = RegExp.$1 || '**';
+      }
+
       reg = _.glob(reg);
     }
 
-    return sources.filter(function(file) {
+    result = sources.filter(function(file) {
       reg.lastIndex = 0;
       return (reg === '**' || reg.test(file.subpath)) && (!rExt || file.rExt === rExt);
     });
+
+    if (pseudo) {
+      var base = result;
+      result = [];
+
+      if (pseudo === 'deps' || pseudo === 'async') {
+        base.forEach(function(file) {
+          result.push.apply(result, getDeps(file, pseudo === 'async'));
+        });
+      } else {
+        fis.log.error('The pseudo class `%s` is not supported.', pseudo);
+      }
+    }
+
+    return result;
   }
 
   Object.keys(pack).forEach(function(subpath, index) {
