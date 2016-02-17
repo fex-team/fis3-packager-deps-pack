@@ -18,46 +18,90 @@ module.exports = function(ret, pack, settings, opt) {
   });
 
   var getDeps = (function(src, ids) {
-    var cache = {};
-    var stack = [];
-
-    return function(file, async, includeAsync) {
-      var fn = arguments.callee;
-
-      if (cache[file.subpath] && cache[file.subpath][async ? 'asyncs' : 'deps']) {
-        return cache[file.subpath][async ? 'asyncs' : 'deps'];
-      }
+    // 2016-02-17
+    // 由于使用递归函数方式, 出现堆栈错误, 所以修改成了 while 逻辑.
+    return function (file, async) {
       var list = [];
+      var pending = [{file: file, async: async}];
+      var collected = [];
+      var asyncCollected = [];
 
-      if (~stack.indexOf(file.subpath)) {
-        return list;
+      while (pending.length) {
+        var current = pending.shift();
+        var cf = current.file;
+        var ca = current.async;
+        var includeAsync = current.includeAsync;
+
+        if (cf.requires && cf.requires.length && !~collected.indexOf(cf)) {
+          collected.push(cf);
+          cf.requires.forEach(function(id) {
+            if (!ids[id])return;
+
+            ca || ~list.indexOf(ids[id]) || list.push(ids[id]);
+
+            pending.push({
+              file: ids[id],
+              async: ca
+            });
+          });
+        }
+
+        if ((ca || includeAsync) && file.asyncs && file.asyncs.length && !~asyncCollected.indexOf(cf)) {
+          asyncCollected.push(cf);
+          cf.asyncs.forEach(function(id) {
+            if (!ids[id])return;
+
+            ~list.indexOf(ids[id]) || list.push(ids[id]);
+
+            pending.push({
+              file: ids[id],
+              async: false,
+              includeAsync: true
+            });
+          });
+        }
       }
 
-      stack.push(file.subpath);
-
-      if ((async || includeAsync) && file.asyncs && file.asyncs.length) {
-        file.asyncs.forEach(function(id) {
-          if (ids[id]) {
-            list.push(ids[id]);
-            list.push.apply(list, fn(ids[id], false, true));
-          }
-        });
-      }
-
-      if (file.requires && file.requires.length) {
-        file.requires.forEach(function(id) {
-          if (ids[id]) {
-            async || list.push(ids[id]);
-            list.push.apply(list, fn(ids[id], async));
-          }
-        });
-      }
-
-      stack.pop();
-      cache[file.subpath] = cache[file.subpath] || {};
-      cache[file.subpath][async ? 'asyncs' : 'deps'] = list;
       return list;
+      //console.log('\n', file.subpath, '\n', list.map(function(file) {
+      //  return file.subpath
+      //}));
+      //process.exit(1);
     };
+
+    //return function(file, async, includeAsync) {
+    //  var fn = arguments.callee;
+    //  var key = async ? 'asyncs' : 'deps';
+    //  if (cache[file.subpath] && cache[file.subpath][key]) {
+    //    return cache[file.subpath][key];
+    //  }
+    //
+    //  var list = [];
+    //  cache[file.subpath] = cache[file.subpath] || {};
+    //  cache[file.subpath][key] = list;
+    //
+    //  if (file.requires && file.requires.length) {
+    //    file.requires.forEach(function(id) {
+    //      if (ids[id]) {
+    //
+    //        // 同步依赖时才加入列表
+    //        async || list.push(ids[id]);
+    //        list.push.apply(list, fn(ids[id], async));
+    //      }
+    //    });
+    //  }
+    //
+    //  if ((async || includeAsync) && file.asyncs && file.asyncs.length) {
+    //    file.asyncs.forEach(function(id) {
+    //      if (ids[id]) {
+    //        list.push(ids[id]);
+    //        list.push.apply(list, fn(ids[id], false, true));
+    //      }
+    //    });
+    //  }
+    //
+    //  return list;
+    //};
   })(src, ret.ids);
 
   function find(reg, rExt) {
