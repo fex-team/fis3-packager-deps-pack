@@ -1,7 +1,27 @@
+var SourceMap = require('source-map');
+var rSourceMap = /\/\/\#\s*sourceMappingURL[^\r\n]*(?:\r?\n|$)/i;
 var path = require('path');
 var _ = fis.util;
 
 module.exports = function(ret, pack, settings, opt) {
+  if (Object.keys(pack).length) {
+    fis.log.warn('`packTo` or `fis-pack.json` is useless while you are using `fis3-packager-deps-packs`');
+  }
+
+  // 是否添加调试信息
+  var useTrack = true;
+  var useSourceMap = false;
+
+  if (_.has(settings, 'useTrack')) {
+    useTrack = settings.useTrack;
+    delete settings.useTrack;
+  }
+
+  if (_.has(settings, 'useSourceMap')) {
+    useSourceMap = settings.useSourceMap;
+    delete settings.useSourceMap;
+  }
+
   // 忽略 packTo 信息，直接从 settings 中读取。
   pack = settings;
 
@@ -63,45 +83,7 @@ module.exports = function(ret, pack, settings, opt) {
       }
 
       return list;
-      //console.log('\n', file.subpath, '\n', list.map(function(file) {
-      //  return file.subpath
-      //}));
-      //process.exit(1);
     };
-
-    //return function(file, async, includeAsync) {
-    //  var fn = arguments.callee;
-    //  var key = async ? 'asyncs' : 'deps';
-    //  if (cache[file.subpath] && cache[file.subpath][key]) {
-    //    return cache[file.subpath][key];
-    //  }
-    //
-    //  var list = [];
-    //  cache[file.subpath] = cache[file.subpath] || {};
-    //  cache[file.subpath][key] = list;
-    //
-    //  if (file.requires && file.requires.length) {
-    //    file.requires.forEach(function(id) {
-    //      if (ids[id]) {
-    //
-    //        // 同步依赖时才加入列表
-    //        async || list.push(ids[id]);
-    //        list.push.apply(list, fn(ids[id], async));
-    //      }
-    //    });
-    //  }
-    //
-    //  if ((async || includeAsync) && file.asyncs && file.asyncs.length) {
-    //    file.asyncs.forEach(function(id) {
-    //      if (ids[id]) {
-    //        list.push(ids[id]);
-    //        list.push.apply(list, fn(ids[id], false, true));
-    //      }
-    //    });
-    //  }
-    //
-    //  return list;
-    //};
   })(src, ret.ids);
 
   function find(reg, rExt) {
@@ -142,6 +124,7 @@ module.exports = function(ret, pack, settings, opt) {
   }
 
   Object.keys(pack).forEach(function(subpath, index) {
+    var sourceNode = useSourceMap && new SourceMap.SourceNode();
     var patterns = pack[subpath];
 
     if (!Array.isArray(patterns)) {
@@ -169,20 +152,8 @@ module.exports = function(ret, pack, settings, opt) {
         index === 0 && (list = find('**'));
       }
 
-      var mathes = find(pattern, pkg.rExt);
+      var mathes = find(pattern);
       list = _[exclude ? 'difference' : 'union'](list, mathes);
-    });
-
-    // 根据 packOrder 排序
-    list = list.sort(function(a, b) {
-      var a1 = a.packOrder >> 0;
-      var b1 = b.packOrder >> 0;
-
-      if (a1 === b1) {
-        return list.indexOf(a) - list.indexOf(b);
-      }
-
-      return a1 - b1;
     });
 
     // sort by dependency
@@ -213,7 +184,7 @@ module.exports = function(ret, pack, settings, opt) {
     var requires = [];
     var requireMap = {};
 
-    filtered.forEach(function(file) {
+    filtered.forEach(function (file) {
       var id = file.getId();
 
       if (ret.map.res[id]) {
@@ -228,17 +199,34 @@ module.exports = function(ret, pack, settings, opt) {
         fis.emit('pack:file', message);
         c = message.content;
 
-        if (c) {
-          content += content ? '\n' : '';
-
-          if (file.isJsLike) {
-            content += ';';
-          } else if (file.isCssLike) {
-            c = c.replace(/@charset\s+(?:'[^']*'|"[^"]*"|\S*);?/gi, '');
-          }
-
-          content += '/*!' + file.subpath + '*/\n' + c;
+        var prefix = useTrack ? ('/*!' + file.id + '*/\n') : ''; // either js or css
+        if (file.isJsLike) {
+          prefix = ';' + prefix;
+        } else if (file.isCssLike && c) {
+          c = c.replace(/@charset\s+(?:'[^']*'|"[^"]*"|\S*);?/gi, '');
         }
+
+        if (content) prefix = '\n' + prefix;
+
+        c = c.replace(rSourceMap, '');
+
+        if (sourceNode) {
+          sourceNode.add(prefix);
+
+          var mapFile = getMapFile(file);
+          if (mapFile) {
+            var json = JSON.parse(mapFile.getContent());
+            var smc = new SourceMap.SourceMapConsumer(json);
+
+            sourceNode.add(SourceMap.SourceNode.fromStringWithSourceMap(c, smc));
+            // mapFile.release = false;
+            // here? hasSourceMap = true;
+          } else {
+            sourceNode.add(contents2sourceNodes(c, file.subpath));
+          }
+        }
+
+        content += prefix + c;
 
         ret.map.res[id].pkg = pid;
         requires = requires.concat(file.requires);
@@ -248,12 +236,25 @@ module.exports = function(ret, pack, settings, opt) {
     });
 
     if (has.length) {
+      if (sourceNode) {
+        var mapping = fis.file.wrap(pkg.dirname + '/' + pkg.filename + pkg.rExt + '.map');
+        var code_map = sourceNode.toStringWithSourceMap({
+          file: pkg.subpath
+        });
+
+        var generater = SourceMap.SourceMapGenerator.fromSourceMap(new SourceMap.SourceMapConsumer(code_map.map.toJSON()));
+        mapping.setContent(generater.toString());
+
+        ret.pkg[mapping.subpath] = mapping;
+        content += pkg.isCssLike ? ('/*# sourceMappingURL=' + mapping.getUrl() + '*/') : ('//# sourceMappingURL=' + mapping.getUrl());
+      }
+
       pkg.setContent(content);
       ret.pkg[pkg.subpath] = pkg;
 
       // collect dependencies
       var deps = [];
-      requires.forEach(function(id) {
+      requires.forEach(function (id) {
         if (!requireMap[id]) {
           deps.push(id);
           requireMap[id] = true;
@@ -270,3 +271,31 @@ module.exports = function(ret, pack, settings, opt) {
     }
   });
 };
+
+function getMapFile(file) {
+  // 同时修改 sourcemap 文件内容。
+  var derived = file.derived;
+  if (!derived || !derived.length) {
+    derived = file.extras && file.extras.derived;
+  }
+
+  if (derived && derived[0] && derived[0].rExt === '.map') {
+    return derived[0];
+  }
+
+  return null;
+}
+
+function contents2sourceNodes(content, filename) {
+  var chunks = [];
+  var lineIndex = 0;
+  content.replace(/.*(\r\n|\n|\r|$)/g, function(line) {
+    lineIndex++;
+    chunks.push(new SourceMap.SourceNode(lineIndex, 0, filename, line));
+  });
+
+  var node = new SourceMap.SourceNode(1, 0, filename, chunks);
+  node.setSourceContent(filename, content);
+
+  return node;
+}

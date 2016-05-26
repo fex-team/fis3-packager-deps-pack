@@ -5,9 +5,9 @@
 ```js
 fis.match('::packager', {
   packager: fis.plugin('deps-pack', {
-    
+
     'pkg/hello.js': [
-      
+
       // 将 main.js 加入队列
       '/static/hello/src/main.js',
 
@@ -19,6 +19,12 @@ fis.match('::packager', {
 
       // 移除 comp.js 所有同步依赖
       '!/static/hello/src/comp.js:deps'
+    ],
+
+    // 也可以从将 js 依赖中 css 命中。
+    'pkg/hello.css': [
+      // main.js 的所有同步依赖加入队列
+      '/static/hello/src/main.js:deps',
     ]
 
   })
@@ -40,4 +46,45 @@ fis.match('::packager', {
 
 ```
 npm install -g fis3-packager-deps-pack
+```
+
+## 配置项
+
+1. `useTrack` 默认 `true`。 是否将合并前的文件路径写入注释中，方便定位代码。
+2. `useSourceMap` 默认为 `false`。是否开启 souremap 功能。
+
+### 关闭输出路径信息
+
+默认打包后输出路径信息,便于调试.形式如下
+
+```js
+/*!/components/underscore/underscore.js*/
+```
+
+可以在插件的配置中关闭路径信息输出
+
+```js
+fis.match('::package', {
+  packager: fis.plugin('deps-pack', {
+    useTrack : false, // 是否输出路径信息,默认为 true
+    'pkg/all.js': [
+       '/modules/index.jsx',
+       '/modules/index.jsx:deps'
+    ]
+  })
+})
+```
+
+### 开启 SourceMap 功能
+
+```js
+fis.match('::package', {
+  packager: fis.plugin('deps-pack', {
+    useSourceMap : true, // 合并后开启 SourceMap 功能。
+    'pkg/all.js': [
+       '/modules/index.jsx',
+       '/modules/index.jsx:deps'
+    ]
+  })
+})
 ```
