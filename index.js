@@ -1,5 +1,5 @@
 var SourceMap = require('source-map');
-var rSourceMap = /\/\/\#\s*sourceMappingURL[^\r\n]*(?:\r?\n|$)/i;
+var rSourceMap = /(?:\/\/\#\s*sourceMappingURL[^\r\n]*|\/\*\#\s*sourceMappingURL[^\r\n]*\*\/)(?:\r?\n|$)/ig;
 var path = require('path');
 var _ = fis.util;
 
@@ -219,8 +219,6 @@ module.exports = function(ret, pack, settings, opt) {
             var smc = new SourceMap.SourceMapConsumer(json);
 
             sourceNode.add(SourceMap.SourceNode.fromStringWithSourceMap(c, smc));
-            // mapFile.release = false;
-            // here? hasSourceMap = true;
           } else {
             sourceNode.add(contents2sourceNodes(c, file.subpath));
           }
@@ -273,7 +271,6 @@ module.exports = function(ret, pack, settings, opt) {
 };
 
 function getMapFile(file) {
-  // 同时修改 sourcemap 文件内容。
   var derived = file.derived;
   if (!derived || !derived.length) {
     derived = file.extras && file.extras.derived;
