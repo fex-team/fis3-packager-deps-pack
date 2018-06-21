@@ -40,9 +40,12 @@ module.exports = function(ret, pack, settings, opt) {
   var getDeps = (function(src, ids) {
     // 2016-02-17
     // 由于使用递归函数方式, 出现堆栈错误, 所以修改成了 while 逻辑.
-    return function (file, async) {
+    return function(file, async) {
       var list = [];
-      var pending = [{file: file, async: async}];
+      var pending = [{
+        file: file,
+        async: async
+      }];
       var collected = [];
       var asyncCollected = [];
 
@@ -55,12 +58,12 @@ module.exports = function(ret, pack, settings, opt) {
         if (cf.requires && cf.requires.length && !~collected.indexOf(cf)) {
           collected.push(cf);
           cf.requires.forEach(function(id) {
-            if (!ids[id])return;
+            if (!ids[id] && !ids[id + '.js']) return;
 
-            ca || ~list.indexOf(ids[id]) || list.push(ids[id]);
+            ca || ~list.indexOf(ids[id] || ids[id + '.js']) || list.push(ids[id] || ids[id + '.js']);
 
             pending.push({
-              file: ids[id],
+              file: ids[id] || ids[id + '.js'],
               async: ca
             });
           });
@@ -69,7 +72,7 @@ module.exports = function(ret, pack, settings, opt) {
         if ((ca || includeAsync) && file.asyncs && file.asyncs.length && !~asyncCollected.indexOf(cf)) {
           asyncCollected.push(cf);
           cf.asyncs.forEach(function(id) {
-            if (!ids[id])return;
+            if (!ids[id]) return;
 
             ~list.indexOf(ids[id]) || list.push(ids[id]);
 
@@ -167,7 +170,7 @@ module.exports = function(ret, pack, settings, opt) {
         file.requires.forEach(function(id) {
           var dep = ret.ids[id];
           var idx;
-          if(dep && dep.rExt === pkg.rExt && ~(idx = list.indexOf(dep))){
+          if (dep && dep.rExt === pkg.rExt && ~(idx = list.indexOf(dep))) {
             add(list.splice(idx, 1)[0]);
           }
         })
@@ -184,7 +187,7 @@ module.exports = function(ret, pack, settings, opt) {
     var requires = [];
     var requireMap = {};
 
-    filtered.forEach(function (file) {
+    filtered.forEach(function(file) {
       var id = file.getId();
 
       if (ret.map.res[id]) {
@@ -252,7 +255,7 @@ module.exports = function(ret, pack, settings, opt) {
 
       // collect dependencies
       var deps = [];
-      requires.forEach(function (id) {
+      requires.forEach(function(id) {
         if (!requireMap[id]) {
           deps.push(id);
           requireMap[id] = true;
